@@ -1,0 +1,16 @@
+[
+{
+  "modid": "lanhostskinrefixed",
+  "name": "Lan Host Skin (Re-)Fix(ed)",
+  "description": "Fixes the bug where the LAN host's skin doesn't appear for all other connected players.",
+  "version": "rv0",
+  "mcversion": "1.7.10",
+  "url": "",
+  "updateUrl": "",
+  "authorList": ["Parker8283"],
+  "credits": "To bug hunters of MC-52974",
+  "logoFile": "",
+  "screenshots": [],
+  "dependencies": []
+}
+]

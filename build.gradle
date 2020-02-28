@@ -1,0 +1,52 @@
+buildscript {
+    repositories {
+        maven {
+            name = "mavenCentralHttps"
+            url = "https://repo1.maven.org/maven2/"
+        }
+        maven {
+            name = "forge"
+            url = "http://files.minecraftforge.net/maven"
+        }
+        maven {
+            name = "sonatype"
+            url = "https://oss.sonatype.org/content/repositories/snapshots/"
+        }
+    }
+    dependencies {
+        classpath 'net.minecraftforge.gradle:ForgeGradle:1.2-SNAPSHOT'
+    }
+}
+
+apply plugin: 'forge'
+
+version = "rv0"
+group = "net.parker8283"
+archivesBaseName = "LanHostSkinReFixed"
+
+minecraft {
+    version = "1.7.10-10.13.4.1614-1.7.10"
+    runDir = "run"
+    mappings = 'stable_12'
+}
+
+sourceSets.main.java.exclude '**/reference/**' // Don't compile my reference files
+
+processResources {
+    inputs.property "version", project.version
+    inputs.property "mcversion", project.minecraft.version
+    from(sourceSets.main.resources.srcDirs) {
+        include '*.info'
+        expand 'version':project.version, 'mcversion':project.minecraft.version
+    }
+    from(sourceSets.main.resources.srcDirs) {
+        exclude '*.info'
+    }
+}
+
+jar {
+    manifest {
+        attributes "FMLCorePlugin": "net.parker8283.lhsrf.LHSRFLoader"
+    }
+    version = "${project.minecraft.version}-${project.version}"
+}
