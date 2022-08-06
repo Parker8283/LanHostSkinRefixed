@@ -60,4 +60,13 @@ public class ASMHelper {
         }
         return null;
     }
+
+    public static LabelNode findNextLabel(AbstractInsnNode instruction) {
+        for (AbstractInsnNode insn = instruction.getNext(); insn != null; insn = insn.getNext()) {
+            if (insn.getType() == AbstractInsnNode.LABEL) {
+                return (LabelNode)insn;
+            }
+        }
+        return null;
+    }
 }

@@ -20,7 +20,7 @@ buildscript {
 
 apply plugin: 'forge'
 
-version = "rv0"
+version = "rv1"
 group = "net.parker8283"
 archivesBaseName = "LanHostSkinReFixed"
 

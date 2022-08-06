@@ -11,6 +11,7 @@ import net.minecraft.launchwrapper.IClassTransformer;
 import net.parker8283.lhsrf.asm.ASMHelper;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.FieldInsnNode;
 import org.objectweb.asm.tree.InsnList;
 import org.objectweb.asm.tree.InsnNode;
 import org.objectweb.asm.tree.JumpInsnNode;
@@ -29,6 +30,10 @@ import static org.objectweb.asm.Opcodes.*;
  * PR#1832 by Parker8283 : https://github.com/MinecraftForge/MinecraftForge/pull/1832/files
  *   NOTE: The new field and methods in Session were put in LHSRFHooks.
  * PR#2069 by Simon816 : https://github.com/MinecraftForge/MinecraftForge/pull/2069/files
+ *
+ * This also includes a new patch to GuiConnecting as that is the other place a C00PacketLoginStart is sent.
+ * I would put the code just in that packet class, but I need the session manager, and since there are only two
+ * places that I personally care about that send the packet, it's fine to do this (to me at least).
  *
  * Exact changes can be viewed in the "reference" package.
  */
@@ -86,7 +91,7 @@ public class LHSRFTransformer implements IClassTransformer {
                 throw new RuntimeException("Could not find launchIntegratedServer method in Minecraft class");
             }
 
-            LOG.info("We have a lead on its whereabouts... (Successfully patched Minecraft class)");
+            LOG.info("Successfully patched Minecraft class");
             return ASMHelper.writeClassToBytes(minecraft);
         } else if (transformedName.equals("net.minecraft.util.Session")) {
             LOG.debug("Found Session class");
@@ -115,8 +120,64 @@ public class LHSRFTransformer implements IClassTransformer {
                 throw new RuntimeException("Could not find getProfile method in Session class");
             }
 
-            LOG.info("We're hot on its trail! (Successfully patched Session class)");
+            LOG.info("Successfully patched Session class");
             return ASMHelper.writeClassToBytes(session);
+        } else if (transformedName.equals("net.minecraft.client.multiplayer.GuiConnecting$1")) {
+            LOG.debug("Found GuiConnecting$1 class");
+            ClassNode guiConnecting = ASMHelper.readClassFromBytes(basicClass);
+
+            // Patch run() of connect()
+            MethodNode func = ASMHelper.findMethodNodeOfClass(guiConnecting, "run", "()V");
+            if (func != null) {
+                AbstractInsnNode target = ASMHelper.findInstruction(func.instructions.getFirst(), new TypeInsnNode(NEW, "net/minecraft/network/login/client/C00PacketLoginStart"), false);
+                if (target != null) {
+                    // Remove moved instructions (I'll just re-create them later)
+                    target = target.getPrevious().getPrevious(); // GETFIELD net/minecraft/client/multiplayer/GuiConnecting$1.this$0 : Lnet/minecraft/client/multiplayer/GuiConnecting;
+                    func.instructions.remove(target.getNext()); // INVOKESTATIC net/minecraft/client/multiplayer/GuiConnecting.access$100 (Lnet/minecraft/client/multiplayer/GuiConnecting;)Lnet/minecraft/network/NetworkManager;
+                    func.instructions.remove(target.getNext()); // NEW net/minecraft/network/login/client/C00PacketLoginStart
+                    func.instructions.remove(target.getNext()); // DUP
+                    func.instructions.remove(target.getNext()); // ALOAD 0
+                    func.instructions.remove(target.getNext()); // GETFIELD net/minecraft/client/multiplayer/GuiConnecting$1.this$0 : Lnet/minecraft/client/multiplayer/GuiConnecting;
+                    // Insert new instructions
+                    target = target.getNext().getNext().getNext().getNext(); // INVOKESPECIAL net/minecraft/network/login/client/C00PacketLoginStart.<init> (Lcom/mojang/authlib/GameProfile;)V
+                    InsnList toInject = new InsnList();
+                    LabelNode gameProfileDeclared = new LabelNode();
+                    LabelNode ifEnd = new LabelNode();
+                    LabelNode gameProfileOOS = ASMHelper.findNextLabel(target);
+                    toInject.add(new VarInsnNode(ASTORE, 2));
+                    toInject.add(gameProfileDeclared);
+                    toInject.add(new MethodInsnNode(INVOKESTATIC, "net/parker8283/lhsrf/LHSRFHooks", "hasCachedProperties", "()Z", false));
+                    toInject.add(new JumpInsnNode(IFNE, ifEnd));
+                    toInject.add(new VarInsnNode(ALOAD, 0));
+                    toInject.add(new FieldInsnNode(GETFIELD, "net/minecraft/client/multiplayer/GuiConnecting$1", isDev ? "this$0" : "field_148230_c", "Lnet/minecraft/client/multiplayer/GuiConnecting;"));
+                    toInject.add(new FieldInsnNode(GETFIELD, "net/minecraft/client/multiplayer/GuiConnecting", isDev ? "mc" : "field_146297_k", "Lnet/minecraft/client/Minecraft;"));
+                    toInject.add(new MethodInsnNode(INVOKEVIRTUAL, "net/minecraft/client/Minecraft", isDev ? "getSessionService" : "func_152347_ac", "()Lcom/mojang/authlib/minecraft/MinecraftSessionService;", false));
+                    toInject.add(new VarInsnNode(ALOAD, 2));
+                    toInject.add(new InsnNode(ICONST_1));
+                    toInject.add(new MethodInsnNode(INVOKEINTERFACE, "com/mojang/authlib/minecraft/MinecraftSessionService", "fillProfileProperties", "(Lcom/mojang/authlib/GameProfile;Z)Lcom/mojang/authlib/GameProfile;", true));
+                    toInject.add(new VarInsnNode(ASTORE, 2));
+                    toInject.add(new VarInsnNode(ALOAD, 2));
+                    toInject.add(new MethodInsnNode(INVOKEVIRTUAL, "com/mojang/authlib/GameProfile", "getProperties", "()Lcom/mojang/authlib/properties/PropertyMap;", false));
+                    toInject.add(new MethodInsnNode(INVOKESTATIC, "net/parker8283/lhsrf/LHSRFHooks", "setProperties", "(Lcom/mojang/authlib/properties/PropertyMap;)V", false));
+                    toInject.add(ifEnd);
+                    toInject.add(new VarInsnNode(ALOAD, 0));
+                    toInject.add(new FieldInsnNode(GETFIELD, "net/minecraft/client/multiplayer/GuiConnecting$1", isDev ? "this$0" : "field_148230_c", "Lnet/minecraft/client/multiplayer/GuiConnecting;"));
+                    toInject.add(new MethodInsnNode(INVOKESTATIC, "net/minecraft/client/multiplayer/GuiConnecting", "access$100", "(Lnet/minecraft/client/multiplayer/GuiConnecting;)Lnet/minecraft/network/NetworkManager;", false));
+                    toInject.add(new TypeInsnNode(NEW, "net/minecraft/network/login/client/C00PacketLoginStart"));
+                    toInject.add(new InsnNode(DUP));
+                    toInject.add(new VarInsnNode(ALOAD, 2));
+                    func.instructions.insertBefore(target, toInject);
+                    func.localVariables.add(new LocalVariableNode("gameProfile", "Lcom/mojang/authlib/GameProfile;", null, gameProfileDeclared, gameProfileOOS, 2));
+                    LOG.debug("Patched run method");
+                } else {
+                    throw new RuntimeException("Could not find injection point in run method in connect method in GuiConnecting class");
+                }
+            } else {
+                throw new RuntimeException("Could not find run method made in connect method in GuiConnecting class");
+            }
+
+            LOG.info("Successfully patched GuiConnecting$1 class");
+            return ASMHelper.writeClassToBytes(guiConnecting);
         } else if (transformedName.equals("net.minecraft.client.resources.SkinManager$3")) {
             LOG.debug("Found SkinManager$3 class");
             ClassNode skinManager = ASMHelper.readClassFromBytes(basicClass);
@@ -144,7 +205,7 @@ public class LHSRFTransformer implements IClassTransformer {
                 throw new RuntimeException("Could not find run method made in func_152790_a method in SkinManager class");
             }
 
-            LOG.info("We've caught it! Here you go! (Successfully patched SkinManager$3 class)");
+            LOG.info("Successfully patched SkinManager$3 class");
             return ASMHelper.writeClassToBytes(skinManager);
         }
         return basicClass;
